@@ -144,16 +144,25 @@ def parse_model_output(content: object) -> dict[str, str]:
             pass
     if data is None:
         raise ValueError("无有效JSON：" + content[:160].replace("\n", " "))
+    missing = [k for k in MODEL_FIELDS if k not in data]
+    if "详细描述" in missing or "地标身份特征" in missing or len(missing) > 3:
+        raise ValueError("JSON关键字段缺失或输出被截断：" + "、".join(missing))
+    aliases = {"晴天": "晴朗", "夜晚": "夜间", "夜景": "夜间",
+               "黄昏": "日落", "傍晚": "日落", "清晨": "上午",
+               "侧面": "斜侧", "鸟瞰": "航拍", "俯瞰": "俯拍"}
     result = {}
     for key in MODEL_FIELDS:
-        if key not in data:
-            raise ValueError("JSON缺少字段：" + key)
-        value = data[key]
+        value = data.get(key, "无法判断")
         if isinstance(value, list):
             value = "；".join(map(str, value))
         value = str(value if value is not None else "").strip() or "无法判断"
         if key in CHOICE_SETS and value not in CHOICE_SETS[key]:
-            raise ValueError(f"非法分类值：{key}={value}")
+            replacement = aliases.get(value, "")
+            if replacement in CHOICE_SETS[key]:
+                value = replacement
+            else:
+                # 个别分类超出候选值时不重跑整张图；保留其他已成功字段
+                value = "无法判断" if "无法判断" in CHOICE_SETS[key] else "其他"
         result[key] = value
     if len(result["详细描述"]) < 30:
         raise ValueError("详细描述过短")
